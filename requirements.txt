@@ -1,0 +1,14 @@
+pandas
+SQLAlchemy
+python-dotenv
+psycopg2-binary
+scikit-learn
+joblib
+streamlit
+plotly
+dbt-postgres
+dbt-bigquery
+google-genai
+pydantic
+google-cloud-bigquery
+google-cloud-storage

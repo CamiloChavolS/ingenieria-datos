@@ -1,0 +1,102 @@
+version: 2
+
+models:
+  - name: dim_account
+    description: >-
+      Dimensión de cuenta con clave natural account_id. Una fila por cuenta;
+      industria y country_key representan los atributos vigentes en la fuente.
+    columns:
+      - name: account_id
+        description: Clave natural única de la cuenta.
+        tests:
+          - not_null
+          - unique
+      - name: account_name
+        tests:
+          - not_null
+      - name: industry
+        tests:
+          - not_null
+      - name: country_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_country')
+                field: country_key
+
+  - name: dim_country
+    description: >-
+      Dimensión de país con clave natural country_key y código normalizado;
+      Unknown representa un valor de origen ausente.
+    columns:
+      - name: country_key
+        tests:
+          - not_null
+          - unique
+      - name: country_code
+        tests:
+          - not_null
+      - name: country_name
+        tests:
+          - not_null
+
+  - name: dim_plan
+    description: >-
+      Dimensión de plan con clave natural estandarizada plan_key y una fila
+      por categoría de plan presente en la fuente actual.
+    columns:
+      - name: plan_key
+        description: Clave natural en mayúsculas; UNKNOWN representa nulos.
+        tests:
+          - not_null
+          - unique
+      - name: plan_tier
+        tests:
+          - not_null
+
+  - name: fct_customer_churn
+    description: >-
+      Hecho de snapshot actual con granularidad de una fila por cuenta.
+      No conserva historia de snapshots ni implementa SCD tipo 2.
+    columns:
+      - name: account_id
+        description: Clave natural y granularidad del hecho.
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('dim_account')
+                field: account_id
+      - name: plan_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_plan')
+                field: plan_key
+      - name: country_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_country')
+                field: country_key
+
+  - name: mart_customer_churn
+    description: >-
+      Tabla de presentación a nivel de cuenta que une el hecho y sus
+      dimensiones para Streamlit y consumidores analíticos.
+  - name: mart_executive_kpis
+    description: >-
+      KPIs generales de clientes, MRR activo, churn y retención para el
+      resumen ejecutivo.
+  - name: mart_churn_by_industry
+    description: Métricas de churn, actividad y MRR activo por industria.
+  - name: mart_mrr_by_plan
+    description: MRR activo, clientes y churn agrupados por plan SaaS.
+  - name: mart_feedback_themes
+    description: >-
+      Conteo agregado de temas/sentimientos clasificados con Gemini. Se
+      habilita únicamente al existir resultados de enriquecimiento validados.

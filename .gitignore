@@ -1,0 +1,41 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+terraform/*.tfvars
+terraform/*.tfstate*
+terraform/.terraform/
+config/profiles.yml
+.gcp-credentials.json
+.gitlab-oidc-token
+model.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# dbt generated files
+dbt_project/target/
+dbt_project/dbt_packages/
+dbt_project/logs/
+logs/
+database/logs/
+
+# Generated model artifacts and local data
+models_saved/*.joblib
+data/*.csv
+data/*.parquet
+
+# Editors and operating systems
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+
+#Ignore vscode AI rules
+.github\instructions\codacy.instructions.md

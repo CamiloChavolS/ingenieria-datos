@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: "{{ doc('bronze_layer') }}"
+    database: "{{ target.database }}"
+    schema: bronze
+    tables:
+      - name: accounts
+        description: "Una fila por cuenta de cliente tal como llega desde origen."
+      - name: subscriptions
+        description: "Suscripciones y atributos de facturación originales."
+      - name: feature_usage
+        description: "Eventos originales de uso de funcionalidades."
+      - name: support_tickets
+        description: "Tickets originales de soporte al cliente."
+      - name: churn_events
+        description: "Eventos originales de cancelación y reactivación."

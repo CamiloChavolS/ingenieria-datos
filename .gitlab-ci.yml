@@ -1,0 +1,98 @@
+stages:
+  - validate
+  - data
+  - deploy
+  - publish
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  GOOGLE_APPLICATION_CREDENTIALS: "$CI_PROJECT_DIR/.gcp-credentials.json"
+
+python_validate:
+  stage: validate
+  image: python:3.11-slim
+  script:
+    - pip install -r requirements.txt
+    - cp config/profiles.yml.example config/profiles.yml
+    - python -m compileall -q src
+    - dbt parse --project-dir dbt_project --profiles-dir config
+    - GCP_PROJECT_ID=ravenstack-parse-only dbt parse --project-dir dbt_project --profiles-dir config --target cloud_bigquery
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+
+terraform_validate:
+  stage: validate
+  image: hashicorp/terraform:1.9.8
+  script:
+    - terraform -chdir=terraform init -backend=false -input=false
+    - terraform -chdir=terraform validate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+
+cloud_data_pipeline:
+  stage: data
+  image: python:3.11-slim
+  variables:
+    GCP_FEDERATED_SERVICE_ACCOUNT: "$GCP_PIPELINE_SERVICE_ACCOUNT"
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://iam.googleapis.com/projects/$GCP_PROJECT_NUMBER/locations/global/workloadIdentityPools/$GCP_WIF_POOL/providers/$GCP_WIF_PROVIDER
+  before_script:
+    - pip install -r requirements.txt
+    - python .gitlab/ci/configure_adc.py
+    - cp config/profiles.yml.example config/profiles.yml
+  script:
+    - |
+      set -eu
+      test -f "${SOURCE_ACCOUNTS_CSV:-}" || { echo "Falta el archivo variable SOURCE_ACCOUNTS_CSV."; exit 1; }
+      test -f "${SOURCE_SUBSCRIPTIONS_CSV:-}" || { echo "Falta el archivo variable SOURCE_SUBSCRIPTIONS_CSV."; exit 1; }
+      test -f "${SOURCE_FEATURE_USAGE_CSV:-}" || { echo "Falta el archivo variable SOURCE_FEATURE_USAGE_CSV."; exit 1; }
+      test -f "${SOURCE_SUPPORT_TICKETS_CSV:-}" || { echo "Falta el archivo variable SOURCE_SUPPORT_TICKETS_CSV."; exit 1; }
+      test -f "${SOURCE_CHURN_EVENTS_CSV:-}" || { echo "Falta el archivo variable SOURCE_CHURN_EVENTS_CSV."; exit 1; }
+      mkdir -p data
+      cp -- "$SOURCE_ACCOUNTS_CSV" data/ravenstack_accounts.csv
+      cp -- "$SOURCE_SUBSCRIPTIONS_CSV" data/ravenstack_subscriptions.csv
+      cp -- "$SOURCE_FEATURE_USAGE_CSV" data/ravenstack_feature_usage.csv
+      cp -- "$SOURCE_SUPPORT_TICKETS_CSV" data/ravenstack_support_tickets.csv
+      cp -- "$SOURCE_CHURN_EVENTS_CSV" data/ravenstack_churn_events.csv
+    - python src/ingestion_bigquery.py
+    - dbt run --project-dir dbt_project --profiles-dir config --target cloud_bigquery
+    - dbt test --project-dir dbt_project --profiles-dir config --target cloud_bigquery
+    - python src/governance/apply_bigquery_governance.py
+    - ML_BACKEND=bigquery python src/ml/train_model.py
+    - python src/ml/upload_model.py
+  artifacts:
+    reports:
+      dotenv: model.env
+    expire_in: 1 week
+  rules:
+    - if: '$RUN_CLOUD_PIPELINE == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+  environment:
+    name: gcp-data
+
+genai_enrichment:
+  stage: data
+  image: python:3.11-slim
+  variables:
+    GCP_FEDERATED_SERVICE_ACCOUNT: "$GCP_PIPELINE_SERVICE_ACCOUNT"
+  needs: [cloud_data_pipeline]
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://iam.googleapis.com/projects/$GCP_PROJECT_NUMBER/locations/global/workloadIdentityPools/$GCP_WIF_POOL/providers/$GCP_WIF_PROVIDER
+  script:
+    - pip install -r requirements.txt
+    - cp config/profiles.yml.example config/profiles.yml
+    - python .gitlab/ci/configure_adc.py
+    - AI_BACKEND=bigquery python src/ai/enrich_feedback.py --limit "${AI_MAX_RECORDS:-20}" --execute
+    - ENABLE_GENAI_ENRICHMENT=true dbt run --project-dir dbt_project --profiles-dir config --target cloud_bigquery --select mart_feedback_themes
+  rules:
+    - if: '$RUN_GENAI == "true" && $RUN_CLOUD_PIPELINE == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+
+include:
+  - local: .gitlab/ci/deploy-cloud-run.yml
+  - local: .gitlab/ci/publish-github.yml

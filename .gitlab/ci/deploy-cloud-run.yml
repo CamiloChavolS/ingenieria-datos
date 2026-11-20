@@ -1,0 +1,22 @@
+deploy_cloud_run:
+  stage: deploy
+  image: google/cloud-sdk:slim
+  needs:
+    - job: cloud_data_pipeline
+      artifacts: true
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://iam.googleapis.com/projects/$GCP_PROJECT_NUMBER/locations/global/workloadIdentityPools/$GCP_WIF_POOL/providers/$GCP_WIF_PROVIDER
+  script:
+    - |
+      printf '%s' "$GITLAB_OIDC_TOKEN" > /tmp/gitlab-oidc-token
+      gcloud iam workload-identity-pools create-cred-config "projects/$GCP_PROJECT_NUMBER/locations/global/workloadIdentityPools/$GCP_WIF_POOL/providers/$GCP_WIF_PROVIDER" --service-account="$GCP_DEPLOY_SERVICE_ACCOUNT" --credential-source-file=/tmp/gitlab-oidc-token --output-file=/tmp/gcp-credentials.json
+      export GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-credentials.json
+      gcloud auth login --cred-file=/tmp/gcp-credentials.json
+      gcloud builds submit --tag "$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/ravenstack-app:$CI_COMMIT_SHA"
+      gcloud run deploy "$CLOUD_RUN_SERVICE" --image "$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/ravenstack-app:$CI_COMMIT_SHA" --region "$GCP_REGION" --service-account "$CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT" --set-env-vars "APP_BACKEND=bigquery,GCP_PROJECT_ID=$GCP_PROJECT_ID,ENABLE_GENAI_ENRICHMENT=${ENABLE_GENAI_DASHBOARD:-false},MODEL_GCS_URI=$MODEL_GCS_URI" --no-allow-unauthenticated
+  rules:
+    - if: '$DEPLOY_CLOUD_RUN == "true" && $RUN_CLOUD_PIPELINE == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+  environment:
+    name: production

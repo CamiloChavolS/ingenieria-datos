@@ -1,0 +1,9 @@
+# Infraestructura GCP (plantilla)
+
+Esta plantilla habilita recursos de BigQuery y Vertex AI y configura IAM mínimo para el runtime. Requiere un proyecto GCP con facturación habilitada y permisos para activar APIs y crear recursos. **No ejecutes `terraform apply` sin revisar costos, región, IDs y grupos de acceso.** Terraform no se ha aplicado desde este repositorio.
+
+Terraform crea una taxonomía y el policy tag para el identificador de cuenta. Tras materializar Gold, `src/governance/apply_bigquery_governance.py` adjunta el tag a la columna y crea una row access policy por país para el grupo analista y la cuenta de ejecución del dashboard. La identidad GitLab necesita permisos de Data Catalog y BigQuery para aplicar controles; el grupo analista recibe acceso de lectura fina al tag. El dashboard usa una lista de columnas minimizada y no consulta el identificador.
+
+Completa project_id, region, bq_location, data_analyst_group, gitlab_project_path y gitlab_protected_ref en terraform.tfvars local (ignorado por Git). Terraform crea cuentas de servicio separadas para pipeline, despliegue y runtime. Sus correos se obtienen de los outputs pipeline_service_account_email, deploy_service_account_email y runtime_service_account_email. Configura en GitLab GCP_PIPELINE_SERVICE_ACCOUNT y GCP_DEPLOY_SERVICE_ACCOUNT con los correos de outputs; CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT debe usar el correo de runtime. Solo la cuenta pipeline obtiene permisos de datos y Vertex AI; la cuenta deploy solo recibe permisos para desplegar y construir la imagen. No pongas claves de cuenta de servicio en el repositorio; GitLab usa Workload Identity Federation con OIDC y restricciones al proyecto y rama protegida.
+
+La taxonomía y los controles son una base técnica alineada con minimización, acceso por necesidad y trazabilidad; no constituyen certificación GDPR/LGPD ni sustituyen una evaluación legal, DPIA, retención aprobada o atención de derechos de titulares.

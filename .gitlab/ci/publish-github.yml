@@ -1,0 +1,58 @@
+publish_public_github:
+  stage: publish
+  image: alpine:3.20
+  variables:
+    GIT_DEPTH: "0"
+  before_script:
+    - apk add --no-cache curl git
+  script:
+    - |
+      set +x
+      test -n "$GITHUB_MIRROR_TOKEN" || { echo "Falta GITHUB_MIRROR_TOKEN."; exit 1; }
+      repository_owner="camilochavolsandoval"
+      repository_name="ingenieria-datos"
+      repository_url="https://github.com/$repository_owner/$repository_name.git"
+      if [ -n "${GITHUB_REPOSITORY_URL:-}" ] && [ "$GITHUB_REPOSITORY_URL" != "$repository_url" ]; then
+        echo "GITHUB_REPOSITORY_URL debe apuntar a $repository_owner/$repository_name."
+        exit 1
+      fi
+      api_headers="/tmp/github-api-headers"
+      printf 'Authorization: Bearer %s\nAccept: application/vnd.github+json\nX-GitHub-Api-Version: 2022-11-28\n' "$GITHUB_MIRROR_TOKEN" > "$api_headers"
+      chmod 600 "$api_headers"
+      trap 'rm -f "$credential_file" "$api_headers"' EXIT
+      set +e
+      user_status=$(curl --silent --show-error --output /tmp/github-user.json --write-out '%{http_code}' --header "$(sed -n '1p' "$api_headers")" --header "$(sed -n '2p' "$api_headers")" --header "$(sed -n '3p' "$api_headers")" https://api.github.com/user)
+      set -e
+      if [ "$user_status" != "200" ] || ! grep -Eq '"login"[[:space:]]*:[[:space:]]*"camilochavolsandoval"' /tmp/github-user.json; then
+        echo "El token debe pertenecer a la cuenta camilochavolsandoval."
+        exit 1
+      fi
+      set +e
+      repo_status=$(curl --silent --show-error --output /tmp/github-repo.json --write-out '%{http_code}' --header "$(sed -n '1p' "$api_headers")" --header "$(sed -n '2p' "$api_headers")" --header "$(sed -n '3p' "$api_headers")" "https://api.github.com/repos/$repository_owner/$repository_name")
+      set -e
+      if [ "$repo_status" = "404" ]; then
+        set +e
+        create_status=$(curl --silent --show-error --output /tmp/github-create.json --write-out '%{http_code}' --request POST --header "$(sed -n '1p' "$api_headers")" --header "$(sed -n '2p' "$api_headers")" --header "$(sed -n '3p' "$api_headers")" --header 'Content-Type: application/json' --data "{\"name\":\"$repository_name\",\"description\":\"RavenStack: plataforma de analitica y prediccion de churn SaaS\",\"private\":false,\"auto_init\":false}" https://api.github.com/user/repos)
+        set -e
+        if [ "$create_status" != "201" ]; then
+          echo "No se pudo crear el repositorio publico (HTTP $create_status). Revisa el token y los permisos de creacion de repositorios."
+          cat /tmp/github-create.json
+          exit 1
+        fi
+      elif [ "$repo_status" != "200" ]; then
+        echo "GitHub API no pudo comprobar el repositorio (HTTP $repo_status)."
+        cat /tmp/github-repo.json
+        exit 1
+      elif ! grep -Eq '"private"[[:space:]]*:[[:space:]]*false' /tmp/github-repo.json; then
+        echo "El repositorio existente no es publico; se detiene la publicacion."
+        exit 1
+      fi
+      credential_file="$HOME/.git-credentials"
+      umask 077
+      printf 'https://x-access-token:%s@github.com\n' "$GITHUB_MIRROR_TOKEN" > "$credential_file"
+      git config --global credential.helper "store --file=$credential_file"
+      git remote add github "$repository_url"
+      git push github "HEAD:refs/heads/$CI_DEFAULT_BRANCH"
+  rules:
+    - if: '$PUBLISH_GITHUB == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual

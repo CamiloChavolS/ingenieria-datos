@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: silver_ai
+    description: "Resultados de enriquecimiento aprobados por un proceso Vertex AI."
+    database: "{{ target.database }}"
+    schema: silver
+    tables:
+      - name: churn_feedback_enrichment
+        description: >-
+          Clasificación estructurada de feedback libre; no es una etiqueta de
+          churn ni una verdad de terreno.

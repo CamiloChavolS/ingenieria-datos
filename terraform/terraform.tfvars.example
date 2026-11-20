@@ -1,0 +1,6 @@
+project_id = "replace-with-gcp-project-id"
+region = "us-central1"
+bq_location = "US"
+data_analyst_group = "analysts@example.com"
+gitlab_project_path = "your-group/ravenstack"
+gitlab_protected_ref = "main"

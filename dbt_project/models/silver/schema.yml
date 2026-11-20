@@ -1,0 +1,30 @@
+version: 2
+
+models:
+  - name: fct_customer_churn_summary
+    description: >-
+      Relación analítica a nivel de cuenta que selecciona la suscripción más
+      reciente y agrega el historial de uso y soporte.
+    columns:
+      - name: account_id
+        description: Identificador de una cuenta única.
+        tests:
+          - not_null
+          - unique
+      - name: is_churned
+        description: Indicador binario de churn según el estado de la cuenta.
+
+  - name: stg_accounts
+    description: "Cuentas tipadas y normalizadas desde Bronze."
+
+  - name: stg_subscriptions
+    description: "Suscripciones con fechas, importes y banderas tipadas."
+
+  - name: stg_churn_events
+    description: "Eventos de churn depurados y tipados."
+
+  - name: stg_feature_usage
+    description: "Uso de producto con métricas numéricas tipadas."
+
+  - name: stg_support_tickets
+    description: "Tickets de soporte con fechas y métricas tipadas."
